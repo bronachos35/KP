@@ -1,134 +1,128 @@
 -- Script Name: NIL3 - RECEIVER
 -- Made for the Boss
--- Listens to Host signals for environment, hints, and sound playback
+-- Listens to ReplicatedStorage RemoteEvent for instant cross-client synchronization
 
 local Lighting = game:GetService("Lighting")
 local Workspace = game:GetService("Workspace")
 local SoundService = game:GetService("SoundService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local SKY_ASSET_ID = "rbxassetid://105864964590801"
+local DECAL_ASSET_ID = "rbxassetid://91428750287549"
+
+local originalSkies = {}
+for _, child in ipairs(Lighting:GetChildren()) do
+    if child:IsA("Sky") then table.insert(originalSkies, child:Clone()) end
+end
+local originalDecals = {}
+
+local function executeSetSky()
+    for _, child in ipairs(Lighting:GetChildren()) do
+        if child:IsA("Sky") then child:Destroy() end
+    end
+    local newSky = Instance.new("Sky")
+    newSky.Name = "NIL3CustomSky"
+    newSky.SkyboxBk, newSky.SkyboxDn, newSky.SkyboxFt = SKY_ASSET_ID, SKY_ASSET_ID, SKY_ASSET_ID
+    newSky.SkyboxLf, newSky.SkyboxRt, newSky.SkyboxUp = SKY_ASSET_ID, SKY_ASSET_ID, SKY_ASSET_ID
+    newSky.Parent = Lighting
+end
+
+local function executeRevertSky()
+    for _, child in ipairs(Lighting:GetChildren()) do
+        if child:IsA("Sky") then child:Destroy() end
+    end
+    if #originalSkies > 0 then
+        for _, oldSky in ipairs(originalSkies) do oldSky:Clone().Parent = Lighting end
+    end
+end
+
+local function executeApplyDecals()
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        if obj:IsA("BasePart") then
+            if not originalDecals[obj] then originalDecals[obj] = {} end
+            for _, face in ipairs(Enum.NormalId:GetEnumItems()) do
+                local existingDecal = nil
+                for _, child in ipairs(obj:GetChildren()) do
+                    if child:IsA("Decal") and child.Face == face and child.Name ~= "NIL3Decal" then
+                        existingDecal = child
+                        break
+                    end
+                end
+                if existingDecal and not originalDecals[obj][face] then
+                    originalDecals[obj][face] = existingDecal
+                    existingDecal.Parent = nil
+                end
+                local hasScriptDecal = false
+                for _, child in ipairs(obj:GetChildren()) do
+                    if child:IsA("Decal") and child.Face == face and child.Name == "NIL3Decal" then
+                        hasScriptDecal = true
+                        break
+                    end
+                end
+                if not hasScriptDecal then
+                    local decal = Instance.new("Decal")
+                    decal.Name = "NIL3Decal"
+                    decal.Texture = DECAL_ASSET_ID
+                    decal.Face = face
+                    decal.Parent = obj
+                end
+            end
+        end
+    end
+end
+
+local function executeRevertDecals()
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        if obj:IsA("Decal") and obj.Name == "NIL3Decal" then obj:Destroy() end
+    end
+    for part, faces in pairs(originalDecals) do
+        if part and part.Parent then
+            for face, decal in pairs(faces) do
+                if decal then decal.Parent = part end
+            end
+        end
+    end
+    originalDecals = {}
+end
+
+local function showHintReceiver(text)
+    for _, obj in ipairs(Workspace:GetChildren()) do
+        if obj:IsA("Hint") and obj.Name == "NIL3Hint" then
+            obj:Destroy()
+        end
+    end
+    local hint = Instance.new("Hint")
+    hint.Name = "NIL3Hint"
+    hint.Text = text or "NIL3 HOST ACTIVE"
+    hint.Parent = Workspace
+end
+
+local function removeHintReceiver()
+    for _, obj in ipairs(Workspace:GetChildren()) do
+        if obj:IsA("Hint") and obj.Name == "NIL3Hint" then
+            obj:Destroy()
+        end
+    end
+end
+
+local function playSoundLocal(assetId)
+    local sound = Instance.new("Sound")
+    sound.SoundId = "rbxassetid://" .. assetId
+    sound.Volume = 1
+    sound.Parent = SoundService
+    sound:Play()
+    sound.Ended:Connect(function()
+        sound:Destroy()
+    end)
+end
 
 task.spawn(function()
-    local timeout = 0
-    while not getgenv().NIL3_Signal and timeout < 15 do
-        task.wait(0.5)
-        timeout = timeout + 0.5
-    end
-    
-    local signal = getgenv().NIL3_Signal
-    if not signal then
-        warn("[NIL3 - RECEIVER]: Host signal channel not found.")
-        return
-    end
+    local NIL3Folder = ReplicatedStorage:WaitForChild("NIL3_SyncFolder", 10)
+    if not NIL3Folder then return end
+    local signal = NIL3Folder:WaitForChild("NIL3_SignalEvent", 10)
+    if not signal then return end
 
-    local SKY_ASSET_ID = "rbxassetid://105864964590801"
-    local DECAL_ASSET_ID = "rbxassetid://91428750287549"
-
-    local originalSkies = {}
-    for _, child in ipairs(Lighting:GetChildren()) do
-        if child:IsA("Sky") then table.insert(originalSkies, child:Clone()) end
-    end
-    local originalDecals = {}
-
-    local function executeSetSky()
-        for _, child in ipairs(Lighting:GetChildren()) do
-            if child:IsA("Sky") then child:Destroy() end
-        end
-        local newSky = Instance.new("Sky")
-        newSky.Name = "NIL3CustomSky"
-        newSky.SkyboxBk, newSky.SkyboxDn, newSky.SkyboxFt = SKY_ASSET_ID, SKY_ASSET_ID, SKY_ASSET_ID
-        newSky.SkyboxLf, newSky.SkyboxRt, newSky.SkyboxUp = SKY_ASSET_ID, SKY_ASSET_ID, SKY_ASSET_ID
-        newSky.Parent = Lighting
-    end
-
-    local function executeRevertSky()
-        for _, child in ipairs(Lighting:GetChildren()) do
-            if child:IsA("Sky") then child:Destroy() end
-        end
-        if #originalSkies > 0 then
-            for _, oldSky in ipairs(originalSkies) do oldSky:Clone().Parent = Lighting end
-        end
-    end
-
-    local function executeApplyDecals()
-        for _, obj in ipairs(Workspace:GetDescendants()) do
-            if obj:IsA("BasePart") then
-                if not originalDecals[obj] then originalDecals[obj] = {} end
-                for _, face in ipairs(Enum.NormalId:GetEnumItems()) do
-                    local existingDecal = nil
-                    for _, child in ipairs(obj:GetChildren()) do
-                        if child:IsA("Decal") and child.Face == face and child.Name ~= "NIL3Decal" then
-                            existingDecal = child
-                            break
-                        end
-                    end
-                    if existingDecal and not originalDecals[obj][face] then
-                        originalDecals[obj][face] = existingDecal
-                        existingDecal.Parent = nil
-                    end
-                    local hasScriptDecal = false
-                    for _, child in ipairs(obj:GetChildren()) do
-                        if child:IsA("Decal") and child.Face == face and child.Name == "NIL3Decal" then
-                            hasScriptDecal = true
-                            break
-                        end
-                    end
-                    if not hasScriptDecal then
-                        local decal = Instance.new("Decal")
-                        decal.Name = "NIL3Decal"
-                        decal.Texture = DECAL_ASSET_ID
-                        decal.Face = face
-                        decal.Parent = obj
-                    end
-                end
-            end
-        end
-    end
-
-    local function executeRevertDecals()
-        for _, obj in ipairs(Workspace:GetDescendants()) do
-            if obj:IsA("Decal") and obj.Name == "NIL3Decal" then obj:Destroy() end
-        end
-        for part, faces in pairs(originalDecals) do
-            if part and part.Parent then
-                for face, decal in pairs(faces) do
-                    if decal then decal.Parent = part end
-                end
-            end
-        end
-        originalDecals = {}
-    end
-
-    local function showHintReceiver(text)
-        for _, obj in ipairs(Workspace:GetChildren()) do
-            if obj:IsA("Hint") and obj.Name == "NIL3Hint" then
-                obj:Destroy()
-            end
-        end
-        local hint = Instance.new("Hint")
-        hint.Name = "NIL3Hint"
-        hint.Text = text
-        hint.Parent = Workspace
-    end
-
-    local function removeHintReceiver()
-        for _, obj in ipairs(Workspace:GetChildren()) do
-            if obj:IsA("Hint") and obj.Name == "NIL3Hint" then
-                obj:Destroy()
-            end
-        end
-    end
-
-    local function playSoundLocal(assetId)
-        local sound = Instance.new("Sound")
-        sound.SoundId = "rbxassetid://" .. assetId
-        sound.Volume = 1
-        sound.Parent = SoundService
-        sound:Play()
-        sound.Ended:Connect(function()
-            sound:Destroy()
-        end)
-    end
-
-    signal.Event:Connect(function(action, arg)
+    signal.OnClientEvent:Connect(function(action, arg)
         if action == "SetSky" then
             executeSetSky()
         elseif action == "RevertSky" then
@@ -145,6 +139,6 @@ task.spawn(function()
             playSoundLocal("1839246711")
         end
     end)
-
-    print("[NIL3 - RECEIVER] Fully synced with hint and sound support, boss!")
 end)
+
+print("[NIL3 - RECEIVER] Connected via ReplicatedStorage, boss!")
